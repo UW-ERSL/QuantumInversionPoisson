@@ -1,6 +1,6 @@
 """makeTables.py -- every table of the paper, written to tables/ as LaTeX.
 
-    python makeTables.py                 all four tables (about 1 minute)
+    python makeTables.py                 all five tables (about 1 minute)
     python makeTables.py inverse         just that one
     python makeTables.py --list          names and destinations
 
@@ -119,6 +119,37 @@ def tab_resources(N: int = 1024, eps_ps=(1e-3, 1e-6)) -> None:
 
 
 # ==========================================================================
+#  tab:options (Sec. 3.8): three constructions of the wavenumber-controlled stage
+# ==========================================================================
+def tab_options(Ns=(16, 64, 256, 1024, 4096), eps_p=1e-6) -> None:
+    rows, opt = [], {}
+    for N in (8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096):
+        opt[N] = cells.stage_options(N, RHO, eps_p)
+    # claims of Sec. 3.8
+    T = lambda N, k: opt[N][k]["T"]
+    assert all(T(N, "mux") < T(N, "arith") for N in (8, 16))                       # mux cheapest to N = 16
+    assert all(T(N, "mux") > T(N, "arith") for N in opt if N >= 32)
+    assert all(T(N, "lookup") < T(N, "arith") for N in opt if N <= 2048)             # lookup to N = 2048
+    assert T(4096, "lookup") > T(4096, "arith")
+    o = opt[1024]
+    assert (o["arith"]["toffoli"], o["lookup"]["toffoli"], o["arith"]["work"], o["lookup"]["work"]) == \
+        (44462, 19273, 5672, 9030)
+    assert round(o["arith"]["toffoli"] / o["lookup"]["toffoli"], 1) == 2.3 and o["lookup"]["b"] == 35
+    assert o["mux"]["rotations"] == 3 * 1024 ** 2
+    for N in Ns:
+        v = opt[N]
+        rows.append([f"${N}$", f"${v['F']}$", sci(v["mux"]["T"]), sci(v["lookup"]["T"]), sci(v["arith"]["T"]),
+                     intx(v["lookup"]["work"]), intx(v["arith"]["work"])])
+        print(f"       N={N}: T mux {v['mux']['T']:.3g}, lookup {v['lookup']['T']:.3g} "
+              f"({v['lookup']['toffoli']:,} Toffoli), arith {v['arith']['T']:.3g} ({v['arith']['toffoli']:,}); "
+              f"work lookup {v['lookup']['work']:,}, arith {v['arith']['work']:,}")
+    top = (r" &  & \multicolumn{3}{c}{T gates} & \multicolumn{2}{c}{work qubits}\\"
+           r" \cmidrule(lr){3-5}\cmidrule(lr){6-7} $N$")
+    write("options", "rrrrrrr", [top, "$F$", "multiplexor", "table lookup", "arithmetic",
+                                 "table lookup", "arithmetic"], rows)
+
+
+# ==========================================================================
 #  tab:be-M: encoding of Mtilde from the gate-level circuit
 # ==========================================================================
 def tab_be_M() -> None:
@@ -157,6 +188,7 @@ def tab_inverse() -> None:
 
 
 TABLES = {
+    "options":   (tab_options,   "three constructions of the wavenumber-controlled stage (tab:options, Sec. 3.8)"),
     "geometry":  (tab_geometry,  "extreme eigenvalues of Mtilde, three cells (tab:geometry, Sec. 5.1)"),
     "be_M":      (tab_be_M,      "encoding of Mtilde from the gate-level circuit (tab:be-M, Sec. 5.3)"),
     "inverse":   (tab_inverse,   "the inverse on four sources (tab:inverse, Sec. 5.4)"),

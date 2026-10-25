@@ -10,7 +10,8 @@ Each cell has a material oracle R_chi of O(1) gates, checked on every element.
 Every operator is applied matrix-free (FFT for functions of K, sparse
 A = W^{1/2} G), so the cells reach N = 1024 (N_dof ~ 10^6). The module also
 holds the inverse of Sec. 3.7 (Clenshaw recurrence on q_t), the choice of F
-of Sec. 3.8, and the resource counts of App. A.2 and Sec. 5.5.
+of Sec. 3.8, the resource counts of Secs. 3.8 and 5.5, and the cost estimates of
+the three constructions of the wavenumber-controlled stage (Sec. 3.8).
 """
 import numpy as np
 import scipy.sparse as sp
@@ -316,3 +317,59 @@ def inverse_resources(name, N, rho, eps_p):
                 toffoli_uv=uv["toffoli"], toffoli_per_query=per_query, rot_per_query=rot,
                 toffoli_total=float(d) * per_query,
                 qubits=uv["qubits"] + 3)    # + the U_Sigma ancilla, the flag qubit, the QSVT ancilla
+
+
+# ==========================================================================
+# 5. three constructions of the wavenumber-controlled stage (Sec. 3.8, tab:options)
+# ==========================================================================
+T_PER_TOFFOLI = 4         # Jones (2013)
+
+
+def t_per_rotation(eps):
+    """T gates of one single-qubit rotation to accuracy eps (Ross and Selinger, leading term)."""
+    return 3 * np.log2(1 / eps)
+
+
+def _best_k(d, M):
+    """Power of two k minimizing ceil(d / k) + M (k - 1), and that minimum (Berry et al. 2019, Sec. 3.2)."""
+    ks = [2 ** j for j in range(int(np.log2(d)) + 1)]
+    cost = [int(np.ceil(d / k)) + M * (k - 1) for k in ks]
+    i = int(np.argmin(cost))
+    return ks[i], cost[i]
+
+
+def stage_options(N, rho, eps_p):
+    """Estimated cost of one application of the wavenumber-controlled stage for the three
+    constructions of Sec. 3.8, at the encoding error delta = eps_p / (2 d C) of Eq. (F-choice).
+
+    mux     standard state preparation multiplexed over k (Mottonen et al.): two uniformly
+            controlled R_y gates, N^2 and 2 N^2 rotations at angles tabulated classically.
+    lookup  QROM lookup of the two tabulated angles to b bits each (Berry et al. 2019: compute
+            ceil(d/k1) + M (k1 - 1), measurement-based uncompute ceil(d/k2) + k2, d = N^2,
+            M = 2b, (k1 - 1) M clean ancillas), then the rotations by phase-gradient addition,
+            estimated as 3b Toffoli gates (one b-bit addition per rotation and one selection of
+            the omega register by t_0); the phase-gradient state is prepared once.
+    arith   the CORDIC circuit of Prop. gate (gate-level counts).
+    All three share the zero-mode flag, 2 (2n - 1) Toffoli gates. T gates: T_PER_TOFFOLI per
+    Toffoli and t_per_rotation(delta / R) for each of R synthesized rotations, so that the
+    synthesis adds at most delta. Counts other than `arith` are estimates from published cost
+    formulas, not gate-level circuits."""
+    n = int(np.log2(N))
+    delta, F = encoding_bits(N, rho, eps_p)
+    zero = 2 * (2 * n - 1)
+    out = {}
+    R = 3 * N * N
+    out["mux"] = dict(toffoli=zero, rotations=R, work=2 * n - 1)
+    b = int(np.ceil(np.log2(2 * np.pi / delta)))           # two angles, each rounded to pi 2^-b
+    d, M = N * N, 2 * b
+    k1, c1 = _best_k(d, M)
+    k2 = 2 ** int(np.argmin([np.ceil(d / 2 ** j) + 2 ** j for j in range(n + n + 1)]))
+    c2 = int(np.ceil(d / k2)) + k2
+    out["lookup"] = dict(toffoli=zero + c1 + c2 + 3 * b, rotations=0, work=k1 * M + 2 * b, b=b, k1=k1)
+    r = IsometryCircuit(n=n, F=F).resources()
+    out["arith"] = dict(toffoli=r["toffoli_total"],
+                        rotations=r["controlled_rotations"] + r["fixed_rotations"], work=r["work"])
+    for v in out.values():
+        v["T"] = T_PER_TOFFOLI * v["toffoli"] + (v["rotations"] * t_per_rotation(delta / v["rotations"])
+                                                 if v["rotations"] else 0.0)
+    return dict(N=N, F=F, delta=delta, **out)

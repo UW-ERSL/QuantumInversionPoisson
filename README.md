@@ -103,8 +103,8 @@ print(checks, err, circ.resources()["toffoli_total"])
     python makeFigures.py              # every figure of the paper to figs/, about 10 minutes
     python makeFigures.py mesh         # one figure; --list for the names
 
-`tables/` and `figs/` are generated, not committed. The paper uses four tables,
-`geometry` (Sec. 5.1), `be_M` (Sec. 5.3), `inverse` (Sec. 5.4) and
+`tables/` and `figs/` are generated, not committed. The paper uses five tables,
+`options` (Sec. 3.8), `geometry` (Sec. 5.1), `be_M` (Sec. 5.3), `inverse` (Sec. 5.4) and
 `resources` (Sec. 5.5), and three figures, `spectrum` (Sec. 2.2), `cells`
 (Sec. 5.1) and `mesh` (Sec. 5.2). Both scripts assert every number the text quotes
 about them before writing. `python makeFigures.py circuits qsvt_poly angles`
@@ -131,7 +131,7 @@ Table 1 of the paper (symbols) is not generated. Files in
 | `verify_qiskit_qsvt.py` | (companion paper) The readout circuit built entirely in Qiskit at N = 4, rho = 3: `U_V` (QFT, multiplexed `Q(k)`), `U_Sigma`, `U_M`, the QSVT sequence with pyqsp phases for `q_t`, flags; blocks checked against `Mtilde` and `q_t(Mtilde)/alpha_q`, and the all-zero probability sampled in Aer |
 | `verify_lsq_readout.py` | (companion paper) The least-squares readout `sigma^H/sigma_max = g^T (I - Pi) g` (even polynomial `f = (r_t + e_t)/(1 + e_t)`, one `U_V` per query): dense identity check, gate-level `U_V` emulation with pyqsp phases to d = 640, amplitude estimation from its exact distribution, shifted polynomial `A >= 0` |
 | `cells.py` | Module, not a script: the three test cells (square, cross, laminate) with operators applied matrix-free up to N = 1024, the `R_chi` gate networks checked on every element, the inverse by a Clenshaw recurrence on the Chebyshev interpolant of `q_t`, the choice of F, and the resource counts |
-| `makeTables.py` | The four tables of the paper: `geometry`, `be_M`, `inverse` (N <= 64, dense checks), `resources`; every number the text quotes about them asserted |
+| `makeTables.py` | The five tables of the paper: `options` (three constructions of the wavenumber-controlled stage, `cells.stage_options`), `geometry`, `be_M`, `inverse` (N <= 64, dense checks), `resources`; every number the text quotes about them asserted |
 | `makeFigures.py` | The three figures of the paper: `spectrum`, `cells`, `mesh` (N = 16 ... 1024, asserting every number of Sec. 5.2); on request, the figures the paper does not use |
 | `circuit_figures.py` | The readout and QSVT circuit figures of the companion paper, called by `makeFigures.py circuits` |
 
@@ -228,6 +228,29 @@ The four CORDIC runs, computed and uncomputed, use 20 F^2 + 48 F Toffolis
 (42,660 at F = 45, 96%). Rotations per application: 2F + 1 controlled and 2
 fixed in the wavenumber-controlled stage, 4 n (n - 1) / 2 controlled phases in
 the two 2D Fourier transforms, and 2n phase gates for e^{i(phi1+phi2)}.
+
+## Three constructions of the wavenumber-controlled stage (Sec. 3.8)
+
+`cells.stage_options(N, rho, eps_p)` estimates one application of the stage
+for three constructions, at the encoding error `delta = eps_p / (2 d C)`:
+
+- **multiplexor:** standard state preparation multiplexed over k (Mottonen et
+  al.), two uniformly controlled R_y gates with 3 N^2 rotations at classically
+  tabulated angles; no arithmetic, a few work qubits.
+- **table lookup:** QROM lookup of the two tabulated angles to b bits each
+  (Berry et al. 2019: `ceil(d/k1) + M (k1 - 1)` Toffolis to compute and
+  `ceil(d/k2) + k2` to uncompute by measurement, `d = N^2`, `M = 2b`), then
+  phase-gradient rotations, estimated as 3b Toffolis.
+- **arithmetic:** the CORDIC circuit of the companion paper (gate-level count).
+
+T gates are estimated as 4 per Toffoli (Jones 2013) and 3 log2(1/eps) per
+synthesized rotation (Ross and Selinger), with the synthesis error of all
+rotations together at most `delta`. At rho = 10 and eps_p = 1e-6, the
+multiplexor needs the fewest T gates up to N = 16, the table lookup up to
+N = 2048, and the arithmetic from N = 4096; at N = 1024 the lookup uses 19,273
+Toffolis (2.3 times fewer) and 9,030 work qubits (against 5,672). The lookup
+and multiplexor counts come from published cost formulas, not gate-level
+circuits; `makeTables.py options` asserts these statements.
 
 ## What is NOT established
 
